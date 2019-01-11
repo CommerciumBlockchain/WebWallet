@@ -1,0 +1,27 @@
+{
+  "requires": true,
+  "lockfileVersion": 1,
+  "dependencies": {
+    "express": "^4.16.4",
+    "express-force-ssl": "^0.3.2",
+    "express-minify": "^1.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "name": "wallet",
+  "version": "1.0.0",
+  "description": "PITA",
+  "main": "server.js",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "unknown"
+  },
+  "keywords": [
+    "wallet",
+    "insight"
+  ],
+  "author": "ukminer",
+  "license": "ISC"
+}
