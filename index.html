@@ -4,6 +4,7 @@
 	<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
 	<meta charset="UTF-8">
 	<title>Commercium Wallet</title>
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous">
 	<link rel="stylesheet" type="text/css" href="css/semantic.min.css">
 	<link rel="stylesheet" type="text/css" href="css/style.css">
 	<script src="js/jquery-3.2.1.min.js"></script>
@@ -14,6 +15,7 @@
 	<script src="js/Buffer2.js"></script>
 	<script src="js/bch.js"></script>
 	<script src="js/makemnemonic.js"></script>
+	<script src="js/bitgo-utxo-lib.js"></script>
 </head>
 
 <body>
@@ -111,11 +113,15 @@
 						<tr v-for="tx in transactions">
 							<td v-if="tx.vin[0].addr == address">
 								<i class="medium circular inverted red arrow right icon"></i>
-								<i v-if="tx.confirmations < 1" class="medium hourglass start icon">
+								<i v-if="tx.confirmations < 1" class="fas fa-hourglass-start">
+							</td>
+							<td v-else-if="tx.vin[0].addr == 'zaddr'">
+								<i class="medium circular inverted yellow arrow left icon"></i>
+								<i v-if="tx.confirmations < 1" class="fas fa-hourglass-start">
 							</td>
 							<td v-else>
 								<i class="medium circular inverted green arrow left icon"></i>
-								<i v-if="tx.confirmations < 1" class="medium hourglass start icon">
+								<i v-if="tx.confirmations < 1" class="fas fa-hourglass-start">
 							</td>
 
 							<td><span :data-livestamp="tx.time"></span></td>
@@ -123,7 +129,8 @@
 							<td><a :href="baseURL + '/tx/' + tx.txid" target="_blank">{{ tx.txid }}</a></td>
 
 							<td v-if="tx.vin[0].addr == address" class="negative">
-								-{{ tx.vout[0].value }} {{ symbol }}
+								<!-- -{{ tx.vout[0].value }} {{ symbol }} -->
+								-{{ getOutputValue2(tx.vout) }} {{ symbol }}
 							</td>
 							<td v-else class="positive">
 								+{{ getOutputValue(tx.vout) }} {{ symbol }}

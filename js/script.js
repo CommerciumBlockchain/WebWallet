@@ -3,14 +3,12 @@ var app = new Vue({
 	data: {
 		current: 		"commercium",
 		currentFiat: 	"USD",
-		btcfiat: 0,
-		cmmbtc: 0,
 		msg: 			{ title: "", status: "positive", reason: "" },
 		currencies: 	{ USD: "$", CAD: "$", CNY: "¥", EUR: "€", GBP: "£", JPY: "¥" },
 
 		CMM:    		"commercium",
 		commercium: 	{ address: "", pkey: "", insight: "https://explorer.commercium.net/",
-						  amount: 0, price: 0, symbol: "CMM", tx: [], fee: 0.1 }
+						  amount: 0, price: 0, symbol: "CMM", tx: [], fee: 0.0002 }
 	},
 	methods: {
 		init: function () {
@@ -37,12 +35,27 @@ var app = new Vue({
 			app.updatePrices();
 		},
 		updatePrices: function () {
+			var btcfiat;
+			var btc;
 			return $.get("https://min-api.cryptocompare.com/data/pricemulti?fsyms=BTC&tsyms=" + app.currentFiat).done(function(res) {
-                		app.btcfiat = res['BTC'][app.currentFiat];
-	            	}).then($.get("https://api.crex24.com/CryptoExchangeService/BotPublic/ReturnTicker?request=[NamePairs=BTC_CMM]").done(function(res) {
-                		app.cmmbtc = res["Tickers"][0]["Last"];
-                		app[app.current].price = app.btcfiat*app.cmmbtc;
-            		}));
+				try{
+					btcfiat = res['BTC'][app.currentFiat];
+				}
+				catch(err){
+			
+				}
+			}).then($.get("https://api.crex24.com/CryptoExchangeService/BotPublic/ReturnTicker?request=[NamePairs=BTC_CMM]").done(function(res) {
+				try{
+					btc = res["Tickers"][0]["Last"];
+					var price = (btcfiat * btc);
+					if(price > 0){
+						app[app.current].price = price;
+					}
+				}
+				catch(err){
+					
+				}
+			}));
 		},
 		updateData: function () {
 			if (app.address != "") {
@@ -52,6 +65,13 @@ var app = new Vue({
 		getOutputValue: function (vouts) {
 			for (var i = 0; i < vouts.length; i++) {
 				if (vouts[i].scriptPubKey.addresses[0] == this[this.current].address) {
+					return vouts[i].value;
+				}
+			}
+		},
+		getOutputValue2: function (vouts) {
+			for (var i = 0; i < vouts.length; i++) {
+				if (vouts[i].scriptPubKey.addresses[0] != this[this.current].address) {
 					return vouts[i].value;
 				}
 			}
@@ -70,6 +90,13 @@ var app = new Vue({
 		                url: app.baseURL + "api/txs/?address=" + app.address,
 		                success: function (data) {
 							app[app.current].tx = data['txs'] ? data['txs'] : [];
+
+							for (var i = 0; i < app[app.current].tx.length; i++) { 
+								if (app[app.current].tx[i].vin.length == 0) {
+									var data = { 'addr': 'zaddr' };
+									app[app.current].tx[i].vin.push(data);
+								}
+							}
 		                }
 		            });
 		        }
@@ -90,8 +117,6 @@ var app = new Vue({
 			var recipientAddress = $('#receive-address')[0].value;
 			var senderAddress = app[app.current].address;
 
-			//this.setProgressValue(1);
-
 			// Convert how much we wanna send
 			// to satoshis
 			var satoshisToSend = Math.round(value * 100000000);
@@ -105,65 +130,94 @@ var app = new Vue({
 			// Building our transaction TXOBJ
 			// How many satoshis do we have so far
 			var satoshisSoFar = 0;
+			var history = [];
 			var recipients = [{ address: recipientAddress, satoshis: satoshisToSend }];
+			var txHexString;
 			// Get transactions and info
 			_axios2.default.get(prevTxURL).then(function (tx_resp) {
-				//this.setProgressValue(25);
-
 				var tx_data = tx_resp.data;
-
+				//tx_data.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
+		
 				_axios2.default.get(infoURL).then(function (info_resp) {
-					//this.setProgressValue(50);
 					var info_data = info_resp.data;
-
+		
 					var blockHeight = info_data.info.blocks - 300;
 					var blockHashURL = app[app.current].insight + 'api/block-index/' + blockHeight;
-
+		
 					// Get block hash
 					_axios2.default.get(blockHashURL).then(function (response_bhash) {
-						//this.setProgressValue(75);
-
 						var blockHash = response_bhash.data.blockHash;
-			
-						var senderPrivateKey = new bch.PrivateKey(app[app.current].pkey);
-						var transaction = new bch.Transaction();
-						console.log("CMM TRANSACTION");
-
+						var senderPrivateKey;
+						var transaction;
+						var tx;
+		
+						tx = new bul.TransactionBuilder(bul.networks.commercium, satoshisfeesToSend);
+						tx.setVersion(4);
+						tx.setVersionGroupId(0x892F2085);
+						tx.setExpiryHeight(blockHeight + 1452);
+	
+						if (recipientAddress.length !== 34) {
+							this.msg.status = "negative";
+							this.msg.title = "Error";
+							this.msg.reason = "Incorrect address!";
+	
+							return;						
+						}
+		
 						// Iterate through each utxo
 						// append it to history
 						for (var i = 0; i < tx_data.length; i++) {
 							if (tx_data[i].confirmations == 0) {
 								continue;
 							}
-
-							var utxo = {
-								'txId' 			: tx_data[i].txid, 
-								'outputIndex' 	: tx_data[i].vout,
-								'address' 		: tx_data[i].address,
-								'script' 		: tx_data[i].scriptPubKey,
-								'satoshis' 		: tx_data[i].satoshis
-							};
-
-							//DEBUG
-							console.log("uxto " + utxo);
-							transaction.from(utxo);
-
+							
+							history = history.concat({
+								txid: tx_data[i].txid,
+								vout: tx_data[i].vout,
+								scriptPubKey: tx_data[i].scriptPubKey,
+								satoshis: tx_data[i].satoshis
+							});
+						
 							// How many satoshis do we have so far
 							satoshisSoFar = satoshisSoFar + tx_data[i].satoshis;
 							if (satoshisSoFar >= satoshisToSend + satoshisfeesToSend) {
 								break;
-                            } 
-                        }
-                        
-						transaction.to(recipientAddress, satoshisToSend);
-                        //transaction.fee(app[app.current].fee * 100000000);
-                        transaction.change(app[app.current].address);
-                        transaction.sign(senderPrivateKey);
-						
-						var txHexString = transaction.toString();
-
-						//DEBUG
-						console.log(txHexString);
+							} 
+						}
+	
+						// If we don't have enough address
+						// fail and tell user
+						if (satoshisSoFar < satoshisToSend + satoshisfeesToSend) {
+							this.msg.status = "negative";
+							this.msg.title = "Error";
+							this.msg.reason = "Not enough confirmed inputs to perform transaction!";
+							return;
+						}
+	
+						history.forEach(function(t) {
+							tx.addInput(t.txid, t.vout);
+						});
+	
+						// If we don't have exact amount
+						// Refund remaining to current address
+						if (satoshisSoFar !== satoshisToSend + satoshisfeesToSend) {
+							var refundSatoshis = satoshisSoFar - satoshisToSend - satoshisfeesToSend;
+			
+							// Only refund satoshis if its > 60 (otherwise will be left unconfirmed)
+							if (refundSatoshis > 60) {
+								tx.addOutput(app[app.current].address, refundSatoshis);
+							}
+						}
+						tx.addOutput(recipientAddress, satoshisToSend);
+	
+						var pair = bul.ECPair.fromWIF(app[app.current].pkey, bul.networks.commercium);	
+						var sig = bul.Transaction.SIGHASH_ALL;
+	
+						for (u = 0; u < tx.inputs.length; u++) {
+							tx.sign(u, pair, null, sig, history[u].satoshis);
+						}
+	
+						txHexString = tx.build().toHex();
 						_axios2.default.post(sendRawTxURL, { rawtx: txHexString }).then(function (sendtx_resp) {
 							//DEBUG
 							console.log(sendtx_resp.data.txid);
@@ -187,8 +241,8 @@ var app = new Vue({
 				return;
 			}.bind(this));
 		}
-	},
-    computed: {
+	},   
+	computed: {
     	address: function () {
 			return this[this.current].address;
 		},
